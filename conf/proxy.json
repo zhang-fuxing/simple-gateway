@@ -1,0 +1,34 @@
+{
+    "http": [
+        {
+            "port": 32000,
+            "routes": [
+                {
+                    "source": "^/api/(.*)",
+                    "target": "http://localhost:9999/api/$1",
+                    "order": 1
+                },
+                {
+                    "source": "^/onlyoffice/(.*)",
+                    "target": "http://192.168.235.58:20080/$1",
+                    "order": 1
+                },
+                {
+                    "source": "^/",
+                    "root": "C:\\Users\\kingshine\\Desktop\\web\\82",
+                    "index": "index.html"
+                }
+            ]
+        },
+        {
+            "port": 32001,
+            "routes": [
+                {
+                    "source": "^/",
+                    "root": "D:/",
+                    "index": ""
+                }
+            ]
+        }
+    ]
+}
