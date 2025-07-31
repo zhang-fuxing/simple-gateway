@@ -35,8 +35,8 @@ public class GatewayApplication {
 	public static void run(String[] args) {
 		String path = null;
 		for (String arg : args) {
-			if (arg.startsWith("-f")) {
-				path = arg.substring(2);
+			if (arg.startsWith("-f=")) {
+				path = arg.substring(3);
 			}
 		}
 		GatewayConfig config = JsonUtil.toBean(loadConfig(path), GatewayConfig.class);

@@ -1,6 +1,7 @@
 package com.zhangfuxing.tools.gateway.core;
 
-import com.zhangfuxing.tools.gateway.util.DataSizeFormat;
+import com.zhangfuxing.tools.gateway.ext.FileInfo;
+import com.zhangfuxing.tools.gateway.util.Template;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
@@ -22,6 +23,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
@@ -282,7 +285,7 @@ public class GatewayHandler extends SimpleChannelInboundHandler<FullHttpRequest>
 			return;
 		}
 		if (Files.isDirectory(resourcePath)) {
-			writeDirs(ctx, resourcePath, Paths.get(baseDir));
+			writeDirs1(ctx, resourcePath, Paths.get(baseDir));
 			return;
 		} else if (!Files.isRegularFile(resourcePath)) {
 			sendError(ctx, HttpResponseStatus.NOT_FOUND, "resource not found: " + filepath);
@@ -310,7 +313,7 @@ public class GatewayHandler extends SimpleChannelInboundHandler<FullHttpRequest>
 			}
 			String query = URI.create(request.uri()).getQuery();
 			HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-			String contentType = getContentType(filepath, query);
+			String contentType = FileInfo.getContentType(filepath, query);
 			HttpUtil.setContentLength(response, fileLength);
 			response.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType);
 			if ("application/octet-stream".equals(contentType)) {
@@ -336,75 +339,27 @@ public class GatewayHandler extends SimpleChannelInboundHandler<FullHttpRequest>
 		}
 	}
 
-	private static void writeDirs(ChannelHandlerContext ctx, Path resourcePath, Path rootPath) {
-		StringBuilder sb = new StringBuilder();
-		var a = """
-				<li>
-					<tr>
-						<td><a href="%s">%s</a> | </td>
-						<td>%s | </td>
-						<td>%s</td>
-					</tr>
-				</li>
-				""";
-		sb.append(String.format(a, "../", "上级目录", "目录", "--"));
+	private static void writeDirs1(ChannelHandlerContext ctx, Path resourcePath, Path rootPath) {
+		List<FileInfo> list = new ArrayList<>();
 		try (Stream<Path> pathStream = Files.list(resourcePath)) {
 			pathStream.map(Path::toFile)
 					.filter(f -> !f.isHidden())
-					.forEach(file -> {
-						var href = URLEncoder.encode(rootPath.relativize(file.toPath()).toString(), StandardCharsets.UTF_8);
-						sb.append(String.format(a, href,
-								file.getName(), file.isDirectory() ? "目录" : "文件",
-								file.isFile() ? "<a href=%s>下载 [%s]</a>".formatted(href + "?action=download",
-										DataSizeFormat.formatSize(file.length())) : "--"));
-					});
+					.forEach(file -> list.add(new FileInfo(file, rootPath)));
 		} catch (IOException e) {
 			sendError(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, "Error reading directory");
-
 		}
-
-		FullHttpResponse response = new DefaultFullHttpResponse(
-				HttpVersion.HTTP_1_1, HttpResponseStatus.OK,
-				Unpooled.copiedBuffer(sb.toString(), StandardCharsets.UTF_8));
-		response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html; charset=UTF-8");
-		response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
-		response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, PUT, DELETE, OPTIONS");
-		response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "*");
-		ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-	}
-
-
-	/**
-	 * 根据文件扩展名获取内容类型
-	 */
-	private String getContentType(String filePath, String... query) {
-		if (isDownload(query)) {
-			return "application/octet-stream";
-		}
-
-		filePath = filePath.toLowerCase();
-		if (filePath.endsWith(".html")) {
-			return "text/html; charset=UTF-8";
-		} else if (filePath.endsWith(".css")) {
-			return "text/css; charset=UTF-8";
-		} else if (filePath.endsWith(".js")) {
-			return "application/javascript; charset=UTF-8";
-		} else if (filePath.endsWith(".json")) {
-			return "application/json; charset=UTF-8";
-		} else if (filePath.endsWith(".png")) {
-			return "image/png";
-		} else if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg")) {
-			return "image/jpeg";
-		} else if (filePath.endsWith(".gif")) {
-			return "image/gif";
-		} else if (filePath.endsWith(".svg")) {
-			return "image/svg+xml";
-		} else if (filePath.endsWith(".ico")) {
-			return "image/x-icon";
-		} else if (filePath.endsWith(".webp")) {
-			return "image/webp";
-		} else {
-			return "application/octet-stream";
+		try {
+			var html = Files.readString(Paths.get("./web/file-browse.ftl"));
+			FullHttpResponse response = new DefaultFullHttpResponse(
+					HttpVersion.HTTP_1_1, HttpResponseStatus.OK,
+					Unpooled.copiedBuffer(Template.format(html,  Map.of("files", list)), StandardCharsets.UTF_8));
+			response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html; charset=UTF-8");
+			response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+			response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, PUT, DELETE, OPTIONS");
+			response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "*");
+			ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+		} catch (IOException e) {
+			throw new RuntimeException(e);
 		}
 	}
 
@@ -427,15 +382,4 @@ public class GatewayHandler extends SimpleChannelInboundHandler<FullHttpRequest>
 		return result.toString();
 	}
 
-	private boolean isDownload(String... query) {
-		for (String p : query) {
-			if (p == null) {
-				continue;
-			}
-			if (p.contains("action=download")) {
-				return true;
-			}
-		}
-		return false;
-	}
 }
