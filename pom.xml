@@ -114,6 +114,46 @@
                     <target>17</target>
                 </configuration>
             </plugin>
+
+            <!-- 添加资源复制插件，用于创建dist目录 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-resources-to-dist</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/dist</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}/bin</directory>
+                                    <targetPath>bin</targetPath>
+                                </resource>
+                                <resource>
+                                    <directory>${project.basedir}/conf</directory>
+                                    <targetPath>conf</targetPath>
+                                </resource>
+                                <resource>
+                                    <directory>${project.basedir}/web</directory>
+                                    <targetPath>web</targetPath>
+                                </resource>
+                                <resource>
+                                    <directory>${project.build.directory}</directory>
+                                    <includes>
+                                        <include>${project.artifactId}-${project.version}.jar</include>
+                                    </includes>
+                                    <targetPath>.</targetPath>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
 
     </build>

@@ -21,12 +21,18 @@
             ]
         },
         {
-            "port": 32001,
+            "port": 3200,
             "routes": [
                 {
-                    "source": "^/",
+                    "source": "/",
                     "root": "D:/",
-                    "index": ""
+                    "index": "",
+                    "description": "前端资源配置"
+                },
+                {
+                    "source": "^/layui",
+                    "root": "./web/layui",
+                    "order": 1
                 }
             ]
         }
