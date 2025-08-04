@@ -1,7 +1,9 @@
 package com.zhangfuxing.tools.gateway.core;
 
 import com.zhangfuxing.tools.gateway.ext.FileInfo;
+import com.zhangfuxing.tools.gateway.ext.RequestInfo;
 import com.zhangfuxing.tools.gateway.util.Template;
+import com.zhangfuxing.tools.gateway.util.URLUtils;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
@@ -82,7 +84,7 @@ public class GatewayHandler extends SimpleChannelInboundHandler<FullHttpRequest>
 			applyFilters(route, proxyRequest);
 
 			// 执行转发
-			executeProxyRequest(ctx, proxyRequest, route);
+			executeProxyRequest(ctx, proxyRequest, route, request);
 		} catch (Exception e) {
 			logger.error("Error processing request", e);
 			sendError(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, "Internal server error");
@@ -90,12 +92,7 @@ public class GatewayHandler extends SimpleChannelInboundHandler<FullHttpRequest>
 	}
 
 	private String buildTargetUrl(RouteConfig route, FullHttpRequest request) {
-		String result = route.routingUrl(request);
-		logger.info("proxy: {}  ==>  {}", String.format("%s %s://%s%s", request.method().name(),
-				request.protocolVersion().protocolName().toLowerCase(),
-				request.headers().get("host"),
-				request.uri()), result);
-		return result;
+		return route.routingUrl(request);
 	}
 
 	private FullHttpRequest createProxyRequest(FullHttpRequest original, String targetUrl) {
@@ -103,7 +100,7 @@ public class GatewayHandler extends SimpleChannelInboundHandler<FullHttpRequest>
 		FullHttpRequest newRequest = new DefaultFullHttpRequest(
 				original.protocolVersion(),
 				original.method(),
-				targetUrl,
+				URLUtils.getPathAndParams(targetUrl),
 				original.content().retainedDuplicate()
 		);
 
@@ -157,7 +154,7 @@ public class GatewayHandler extends SimpleChannelInboundHandler<FullHttpRequest>
 		}
 	}
 
-	private void executeProxyRequest(ChannelHandlerContext ctx, FullHttpRequest request, RouteConfig route) {
+	private void executeProxyRequest(ChannelHandlerContext ctx, FullHttpRequest request, RouteConfig route, FullHttpRequest originalRequest) {
 		// 解析目标主机和端口
 		URI uri;
 		String target = route.getTarget();
@@ -183,12 +180,14 @@ public class GatewayHandler extends SimpleChannelInboundHandler<FullHttpRequest>
 						ch.pipeline()
 								.addLast(new HttpClientCodec())
 								.addLast(new HttpObjectAggregator(1024 * 1024))
-								.addLast(new HttpResponseHandler(ctx, route));
+								.addLast(new HttpResponseHandler(ctx, route, request, originalRequest));
 					}
 				});
 
 		bootstrap.connect(host, port)
 				.addListener((ChannelFuture future) -> {
+					String originUrl = Template.engineFmt("${method} ${protocol}://${host}${uri}", new RequestInfo(originalRequest));
+					String targetUrl = Template.engineFmt("${method} ${protocol}://${host}${uri}", new RequestInfo(request));
 					if (future.isSuccess()) {
 						Channel proxyChannel = future.channel();
 						proxyChannel.writeAndFlush(request)
@@ -199,33 +198,45 @@ public class GatewayHandler extends SimpleChannelInboundHandler<FullHttpRequest>
 									}
 								});
 					} else {
-						logger.error("Failed to connect to target service: {}:{}", host, port, future.cause());
+						logger.error("{} ==> {} | ERROR: {}", originUrl, targetUrl, future.cause().getMessage());
 						sendError(ctx, HttpResponseStatus.BAD_GATEWAY, "Cannot connect to target service");
 					}
 				});
 	}
 
 	private static class HttpResponseHandler extends ChannelInboundHandlerAdapter {
+		static final Logger logger = LoggerFactory.getLogger(HttpResponseHandler.class);
 		private final ChannelHandlerContext clientContext;
-		private RouteConfig route;
+		private final RouteConfig route;
+		private final FullHttpRequest request;
+		private final FullHttpRequest originalRequest;
 
-		public HttpResponseHandler(ChannelHandlerContext clientContext, RouteConfig route) {
+		public HttpResponseHandler(ChannelHandlerContext clientContext, RouteConfig route, FullHttpRequest request, FullHttpRequest originalRequest) {
 			this.clientContext = clientContext;
 			this.route = route;
+			this.request = request;
+			this.originalRequest = originalRequest;
 		}
 
 		@Override
 		public void channelRead(ChannelHandlerContext ctx, Object msg) {
+			String originUrl = Template.engineFmt("${method} ${protocol}://${host}/${uri}", new RequestInfo(originalRequest));
+			String targetUrl = Template.engineFmt("${method} ${protocol}://${host}/${uri}", new RequestInfo(request));
 			if (msg instanceof FullHttpResponse response) {
 				// 添加 CORS 头部
 				response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
 				response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, PUT, DELETE, OPTIONS");
 				response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "*");
-
+				Map<String, String> responseHeaders = route.getResponseHeaders();
+				if (responseHeaders != null && !responseHeaders.isEmpty()) {
+					responseHeaders.forEach((k,v) -> response.headers().set(k, v));
+				}
+				logger.info("{} => {} | status: {}", originUrl, targetUrl, response.status().code());
 				// 将响应写回客户端，使用retainedDuplicate确保引用计数正确
 				clientContext.writeAndFlush(response.retainedDuplicate())
 						.addListener(ChannelFutureListener.CLOSE);
 			} else {
+				logger.warn("{}  ==>  {} | {}: {}", originUrl, targetUrl, "ERROR", "Invalid message type");
 				// 释放不处理的消息
 				ReferenceCountUtil.release(msg);
 			}
@@ -352,7 +363,7 @@ public class GatewayHandler extends SimpleChannelInboundHandler<FullHttpRequest>
 			var html = Files.readString(Paths.get("./web/file-browse.ftl"));
 			FullHttpResponse response = new DefaultFullHttpResponse(
 					HttpVersion.HTTP_1_1, HttpResponseStatus.OK,
-					Unpooled.copiedBuffer(Template.format(html,  Map.of("files", list)), StandardCharsets.UTF_8));
+					Unpooled.copiedBuffer(Template.engineFmt(html, Map.of("files", list)), StandardCharsets.UTF_8));
 			response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html; charset=UTF-8");
 			response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
 			response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, PUT, DELETE, OPTIONS");
