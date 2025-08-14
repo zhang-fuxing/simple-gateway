@@ -220,8 +220,8 @@ public class GatewayHandler extends SimpleChannelInboundHandler<FullHttpRequest>
 
 		@Override
 		public void channelRead(ChannelHandlerContext ctx, Object msg) {
-			String originUrl = Template.engineFmt("${method} ${protocol}://${host}/${uri}", new RequestInfo(originalRequest));
-			String targetUrl = Template.engineFmt("${method} ${protocol}://${host}/${uri}", new RequestInfo(request));
+			String originUrl = Template.engineFmt("${method} ${protocol}://${host}${uri}", new RequestInfo(originalRequest));
+			String targetUrl = Template.engineFmt("${method} ${protocol}://${host}${uri}", new RequestInfo(request));
 			if (msg instanceof FullHttpResponse response) {
 				// 添加 CORS 头部
 				response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");

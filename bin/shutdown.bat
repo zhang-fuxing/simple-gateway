@@ -1,5 +1,6 @@
 @echo off
 rem Windows shutdown script for simple-gateway
+chcp 65001 > nul
 
 echo Stopping Simple Gateway...
 

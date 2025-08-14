@@ -1,5 +1,6 @@
 @echo off
 rem Windows startup script for simple-gateway
+chcp 65001 > nul
 
 rem 初始化变量
 set JAVA_OPTS=-Xms512m -Xmx1024m -XX:+UseG1GC

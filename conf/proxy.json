@@ -5,7 +5,7 @@
             "routes": [
                 {
                     "source": "^/api/(.*)",
-                    "target": "http://localhost:9999/api/$1",
+                    "target": "http://localhost:8008/api/$1",
                     "order": 1
                 },
                 {
@@ -15,24 +15,8 @@
                 },
                 {
                     "source": "^/",
-                    "root": "C:\\Users\\kingshine\\Desktop\\web\\82",
+                    "root": "C:\\Users\\kingshine\\Desktop\\web\\80",
                     "index": "index.html"
-                }
-            ]
-        },
-        {
-            "port": 3200,
-            "routes": [
-                {
-                    "source": "/",
-                    "root": "D:/",
-                    "index": "",
-                    "description": "前端资源配置"
-                },
-                {
-                    "source": "^/layui",
-                    "root": "./web/layui",
-                    "order": 1
                 }
             ]
         }
